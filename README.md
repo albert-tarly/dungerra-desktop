@@ -7,6 +7,8 @@ This repo contains only the app shell. The game comes from two other repos, buil
 - [`dungerra-api`](https://github.com/albert-tarly/dungerra-api): the game server, run in desktop mode
 - [`dungerra`](https://github.com/albert-tarly/dungerra): the web client, built with `npm run build:desktop`
 
+Players: see the [Desktop App guide](https://github.com/albert-tarly/dungerra-api/blob/main/docs/user/desktop-app.md) for installing, hosting and joining.
+
 The design and its trade-offs are in [`dungerra-api/docs/decisions/desktop-version.md`](https://github.com/albert-tarly/dungerra-api/blob/main/docs/decisions/desktop-version.md).
 
 ## How it works
