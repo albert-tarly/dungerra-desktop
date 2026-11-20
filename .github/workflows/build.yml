@@ -45,10 +45,10 @@ jobs:
       DUNGERRA_API_DIR: sources/dungerra-api
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout web client
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: albert-tarly/dungerra
           ref: ${{ inputs.dungerra_ref || 'main' }}
@@ -72,7 +72,7 @@ jobs:
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
 
       - name: Checkout server
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: albert-tarly/dungerra-api
           ref: ${{ steps.api.outputs.ref }}
@@ -86,7 +86,7 @@ jobs:
           fi
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: sources/dungerra-api/go.mod
           cache-dependency-path: sources/dungerra-api/go.sum
@@ -130,7 +130,7 @@ jobs:
         run: npx tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
       - name: Upload installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dungerra-${{ matrix.target }}
           path: ${{ matrix.artifact }}
@@ -144,13 +144,13 @@ jobs:
       contents: write
     steps:
       - name: Download installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: installers
           merge-multiple: true
 
       - name: Create draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           files: installers/*
