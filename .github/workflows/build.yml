@@ -62,6 +62,7 @@ jobs:
         env:
           API_REF: ${{ inputs.api_ref }}
         run: |
+          echo "Client commit: $(git -C sources/dungerra rev-parse HEAD)"
           if [ -n "$API_REF" ]; then
             ref="$API_REF"
           else
