@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The bundled launcher page. Game pages come from game servers (local or LAN) and get no app access: no capability lists a remote URL.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

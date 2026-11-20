@@ -1,0 +1,157 @@
+name: Build
+
+# Builds the desktop app for Windows (x64 NSIS installer) and macOS (universal
+# .dmg). Tags v* also create a draft GitHub Release with the installers.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      dungerra_ref:
+        description: "dungerra (web client) branch, tag or commit"
+        default: main
+      api_ref:
+        description: "dungerra-api commit. Empty: the one pinned in dungerra/package-lock.json, so client and server protocol match"
+        default: ""
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
+            bundles: nsis
+            artifact: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          - os: macos-latest
+            target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundles: app,dmg
+            artifact: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      DUNGERRA_DIR: sources/dungerra
+      DUNGERRA_API_DIR: sources/dungerra-api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout web client
+        uses: actions/checkout@v4
+        with:
+          repository: albert-tarly/dungerra
+          ref: ${{ inputs.dungerra_ref || 'main' }}
+          path: sources/dungerra
+
+      # The client compiles against the protocol types of the dungerra-api
+      # commit in its lock file; building that same server commit keeps the
+      # client and server in step
+      - name: Resolve server commit
+        id: api
+        env:
+          API_REF: ${{ inputs.api_ref }}
+        run: |
+          if [ -n "$API_REF" ]; then
+            ref="$API_REF"
+          else
+            ref=$(node -p "require('./sources/dungerra/package-lock.json').packages['node_modules/dungerra-api'].resolved.split('#')[1]")
+          fi
+          echo "Server commit: $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout server
+        uses: actions/checkout@v4
+        with:
+          repository: albert-tarly/dungerra-api
+          ref: ${{ steps.api.outputs.ref }}
+          path: sources/dungerra-api
+
+      - name: Check server supports desktop mode
+        run: |
+          if ! grep -q '"ready-line"' sources/dungerra-api/main.go; then
+            echo "::error::dungerra-api ${{ steps.api.outputs.ref }} predates desktop mode. Run 'npm update dungerra-api' in dungerra and push, or pass api_ref."
+            exit 1
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: sources/dungerra-api/go.mod
+          cache-dependency-path: sources/dungerra-api/go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            sources/dungerra/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install
+        run: npm ci
+
+      - name: Build game server
+        run: node scripts/build-sidecar.mjs --target ${{ matrix.target }}
+
+      - name: Build web client
+        run: node scripts/build-web.mjs --install
+
+      # Tests build for the runner's own triple, whose sidecar exists only on
+      # Windows here (macOS builds the universal one)
+      - name: Test
+        if: runner.os == 'Windows'
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Build app
+        run: npx tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: dungerra-${{ matrix.target }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: installers/*
+          body: |
+            Unsigned builds: Windows SmartScreen and macOS Gatekeeper will warn on first launch. See the README for how to open the app.

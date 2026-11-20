@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dungerra</title>
+    <link rel="stylesheet" href="launcher.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Dungerra</h1>
+        <p class="tagline">Top-down dungeon shooter</p>
+      </header>
+
+      <div class="cards">
+        <section class="card" aria-labelledby="solo-title">
+          <h2 id="solo-title">Solo</h2>
+          <p>Play on this computer. No internet needed.</p>
+          <div class="actions">
+            <button id="solo" type="button" class="primary">Play solo</button>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="host-title">
+          <h2 id="host-title">Host a LAN game</h2>
+          <p>Others on your network join your world.</p>
+          <form id="host-form" class="actions">
+            <label>
+              Port
+              <input id="host-port" type="number" min="1024" max="65535" required />
+            </label>
+            <button id="host" type="submit">Start hosting</button>
+          </form>
+          <div id="host-info" class="host-info" hidden>
+            <p>Hosting. Players join at:</p>
+            <ul id="share-list"></ul>
+            <p class="hint">
+              They can also open this address in a web browser. If nobody can
+              connect, allow Dungerra through your firewall.
+            </p>
+            <div class="actions">
+              <button id="enter-host" type="button" class="primary">Enter game</button>
+              <button id="stop-host" type="button">Stop hosting</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="join-title">
+          <h2 id="join-title">Join a LAN game</h2>
+          <p>Enter the address the host shared.</p>
+          <form id="join-form" class="actions">
+            <input
+              id="join-address"
+              type="text"
+              placeholder="192.168.1.5:8080"
+              autocomplete="off"
+              spellcheck="false"
+              required
+              aria-label="Host address"
+            />
+            <button id="join" type="submit">Join</button>
+          </form>
+        </section>
+      </div>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <footer>
+        <span id="version"></span>
+        <span>Game menu → Back to Launcher returns here.</span>
+      </footer>
+    </main>
+    <script src="launcher.js"></script>
+  </body>
+</html>

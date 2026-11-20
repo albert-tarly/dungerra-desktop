@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- macOS 15+ asks before an app talks to other devices on the network -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Dungerra connects to other players' games on your local network, and lets them join yours.</string>
+  <!-- Game servers on this computer and the LAN are plain http -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
+</dict>
+</plist>
