@@ -27,7 +27,10 @@ Dungerra app (Tauri v2)
 - **Joining players load the client from the host's server.** Client and server versions therefore always match, and a player can also join from any web browser at the host's address.
 - **Sign-in uses local accounts** (username and password) on whichever server you play on. Each server keeps its own accounts and leaderboard.
 - **Solo play uses port 47823** when it is free. The client stores its sign-in per address, so a fixed port keeps you signed in between launches.
-- **Game menu → Back to Launcher** (Ctrl/Cmd+Shift+L) stops the local server and returns to the launcher. Game pages have no access to the app.
+- **Returning to the launcher:** the client's **Main Menu** button (and **Game → Back to Launcher**, Ctrl/Cmd+Shift+L) opens the launcher again.
+  - How the client knows: `open_game` passes the launcher URL as `?launcher=…`. Game pages have no other access to the app.
+  - What happens to the server: the launcher stops a solo server but keeps a hosted game running and shows its address again.
+- **Fonts:** the launcher bundles the client's fonts (`launcher/fonts/`, SIL Open Font License) so it matches the game offline.
 - **Shutdown:** closing the app closes the server's stdin, and the server saves every session before it exits.
 - **Your data** (database, secret key, `server.log` from the latest run) lives in the app data folder:
   - Windows: `%APPDATA%\io.github.albert-tarly.dungerra`

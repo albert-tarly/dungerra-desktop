@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, Submenu};
-use tauri::{AppHandle, Manager, RunEvent, Url, Wry};
+use tauri::{AppHandle, Manager, RunEvent, Url, WebviewWindow, Wry};
 
 use server::{Mode, Paths, ServerManager};
 
@@ -34,6 +34,15 @@ struct Started {
     /// Where this computer opens the game.
     url: String,
     /// Addresses other players use to join (hosting only).
+    share_urls: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Status {
+    /// "solo" or "host".
+    mode: &'static str,
+    url: String,
     share_urls: Vec<String>,
 }
 
@@ -108,13 +117,7 @@ fn start_server_blocking(
         other => return Err(format!("Unknown mode {other:?}")),
     };
 
-    let share_urls: Vec<String> = match mode {
-        Mode::Solo => Vec::new(),
-        Mode::Host => network::lan_addresses()
-            .into_iter()
-            .map(|ip| format!("http://{ip}:{port}/"))
-            .collect(),
-    };
+    let share_urls = share_urls(mode, port);
     match (mode, share_urls.first()) {
         (Mode::Host, Some(url)) => set_title(
             app,
@@ -124,9 +127,46 @@ fn start_server_blocking(
         (Mode::Solo, _) => set_title(app, APP_TITLE),
     }
     Ok(Started {
-        url: format!("http://127.0.0.1:{port}/"),
+        url: local_url(port),
         share_urls,
     })
+}
+
+/// Where this computer opens a game served on `port`.
+fn local_url(port: u16) -> String {
+    format!("http://127.0.0.1:{port}/")
+}
+
+/// Addresses other players use to join a hosted game.
+fn share_urls(mode: Mode, port: u16) -> Vec<String> {
+    match mode {
+        Mode::Solo => Vec::new(),
+        Mode::Host => network::lan_addresses()
+            .into_iter()
+            .map(|ip| format!("http://{ip}:{port}/"))
+            .collect(),
+    }
+}
+
+/// The running local server, if any. The launcher uses it to show a hosted
+/// game again after the player returns from it.
+#[tauri::command]
+async fn server_status(app: AppHandle) -> Result<Option<Status>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>()
+            .server
+            .current()
+            .map(|(mode, port)| Status {
+                mode: match mode {
+                    Mode::Solo => "solo",
+                    Mode::Host => "host",
+                },
+                url: local_url(port),
+                share_urls: share_urls(mode, port),
+            })
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Starts the local game server: "solo" (this computer only) or "host" (LAN).
@@ -166,9 +206,16 @@ async fn probe_host(address: String) -> Result<Probed, String> {
 /// Opens the game client served at `url` (a local server or a LAN host).
 #[tauri::command]
 fn open_game(app: AppHandle, url: String) -> Result<(), String> {
-    let url = Url::parse(&url).map_err(|e| e.to_string())?;
+    let mut url = Url::parse(&url).map_err(|e| e.to_string())?;
     if url.scheme() != "http" {
         return Err("Games are served over http".into());
+    }
+    // Tells the client it runs in the app and where its "Main Menu" button
+    // leads; game pages have no other access to the app
+    let launcher = app.state::<AppState>().launcher_url.lock().unwrap().clone();
+    if let Some(launcher) = launcher {
+        url.query_pairs_mut()
+            .append_pair("launcher", launcher.as_str());
     }
     let window = app
         .get_webview_window(MAIN_WINDOW)
@@ -176,26 +223,28 @@ fn open_game(app: AppHandle, url: String) -> Result<(), String> {
     window.navigate(url).map_err(|e| e.to_string())
 }
 
+/// Called by the launcher page when it loads. Only the launcher can call
+/// commands (game pages get no app access), so the caller's URL is where
+/// "Back to Launcher" and the client's "Main Menu" lead. The window's URL at
+/// startup is still about:blank, so it can't be taken from there.
 #[tauri::command]
-fn app_info(app: AppHandle) -> AppInfo {
+fn app_info(app: AppHandle, window: WebviewWindow) -> AppInfo {
+    if let Ok(url) = window.url() {
+        *app.state::<AppState>().launcher_url.lock().unwrap() = Some(url);
+    }
     AppInfo {
         version: app.package_info().version.to_string(),
         default_host_port: network::DEFAULT_LAN_PORT,
     }
 }
 
-/// Stops the local server (if any) and shows the launcher again. Game pages
-/// come from a game server and have no access to the app, so this is a menu
-/// item rather than a button in the game.
-fn back_to_launcher(app: AppHandle) {
-    std::thread::spawn(move || {
-        app.state::<AppState>().server.stop();
-        set_title(&app, APP_TITLE);
-        let launcher = app.state::<AppState>().launcher_url.lock().unwrap().clone();
-        if let (Some(window), Some(url)) = (app.get_webview_window(MAIN_WINDOW), launcher) {
-            let _ = window.navigate(url);
-        }
-    });
+/// Shows the launcher again, like the client's "Main Menu" button. The
+/// launcher then stops a solo server and shows a hosted game as still running.
+fn back_to_launcher(app: &AppHandle) {
+    let launcher = app.state::<AppState>().launcher_url.lock().unwrap().clone();
+    if let (Some(window), Some(url)) = (app.get_webview_window(MAIN_WINDOW), launcher) {
+        let _ = window.navigate(url);
+    }
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
@@ -227,13 +276,10 @@ fn main() {
         .setup(|app| {
             let menu = build_menu(app.handle())?;
             app.set_menu(menu)?;
-            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                *app.state::<AppState>().launcher_url.lock().unwrap() = Some(window.url()?);
-            }
             Ok(())
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
-            MENU_BACK => back_to_launcher(app.clone()),
+            MENU_BACK => back_to_launcher(app),
             MENU_FULLSCREEN => {
                 if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                     let fullscreen = window.is_fullscreen().unwrap_or(false);
@@ -245,6 +291,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             start_server,
             stop_server,
+            server_status,
             probe_host,
             open_game,
             app_info

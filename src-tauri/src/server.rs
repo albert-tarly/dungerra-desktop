@@ -76,6 +76,8 @@ struct Running {
     child: Child,
     /// Held open for the server's lifetime; dropping it asks the server to stop.
     stdin: Option<ChildStdin>,
+    mode: Mode,
+    port: u16,
 }
 
 #[derive(Default)]
@@ -95,6 +97,18 @@ fn parse_ready_port(payload: &str) -> Option<u16> {
 }
 
 impl ServerManager {
+    /// The mode and port of the running server, if any. A server that exited
+    /// on its own (a crash) is forgotten.
+    pub fn current(&self) -> Option<(Mode, u16)> {
+        let mut guard = self.running.lock().unwrap();
+        let running = guard.as_mut()?;
+        if !matches!(running.child.try_wait(), Ok(None)) {
+            *guard = None;
+            return None;
+        }
+        Some((running.mode, running.port))
+    }
+
     /// Stops any running server, then starts one and waits until it accepts
     /// connections. Returns the bound port (useful when `port` is 0).
     pub fn start(&self, paths: &Paths, mode: Mode, port: u16) -> Result<u16, StartError> {
@@ -175,7 +189,12 @@ impl ServerManager {
         let ready = ready_rx.recv_timeout(READY_TIMEOUT);
         if let Ok(payload) = &ready {
             if let Some(bound_port) = parse_ready_port(payload) {
-                *self.running.lock().unwrap() = Some(Running { child, stdin });
+                *self.running.lock().unwrap() = Some(Running {
+                    child,
+                    stdin,
+                    mode,
+                    port: bound_port,
+                });
                 return Ok(bound_port);
             }
         }

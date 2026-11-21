@@ -62,26 +62,31 @@ $("solo").addEventListener("click", () =>
 
 let hostUrl = null;
 
+// Shows a running hosted game: where others join, and how to enter or stop it
+function showHosting(server) {
+  hostUrl = server.url;
+  const list = $("share-list");
+  list.replaceChildren();
+  const port = new URL(server.url).port;
+  const urls = server.shareUrls.length
+    ? server.shareUrls
+    : [`(no network found) port ${port}`];
+  for (const url of urls) {
+    const item = document.createElement("li");
+    item.textContent = url.replace(/^http:\/\//, "").replace(/\/$/, "");
+    list.append(item);
+  }
+  $("host-info").hidden = false;
+  $("host-form").hidden = true;
+}
+
 $("host-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const port = Number($("host-port").value);
   run(`Starting a LAN game on port ${port}…`, async () => {
     const started = await invoke("start_server", { mode: "host", port });
     save(STORAGE_HOST_PORT, String(port));
-    hostUrl = started.url;
-
-    const list = $("share-list");
-    list.replaceChildren();
-    const urls = started.shareUrls.length
-      ? started.shareUrls
-      : [`(no network found) port ${port}`];
-    for (const url of urls) {
-      const item = document.createElement("li");
-      item.textContent = url.replace(/^http:\/\//, "").replace(/\/$/, "");
-      list.append(item);
-    }
-    $("host-info").hidden = false;
-    $("host-form").hidden = true;
+    showHosting(started);
     setStatus("");
   });
 });
@@ -118,8 +123,16 @@ async function init() {
   $("version").textContent = `Dungerra desktop ${info.version}`;
   $("host-port").value = load(STORAGE_HOST_PORT) ?? String(info.defaultHostPort);
   $("join-address").value = load(STORAGE_JOIN_ADDRESS) ?? "";
-  // Back from a game: the server was stopped, start fresh
-  await invoke("stop_server");
+
+  // Back from a game (Main Menu): a hosted game keeps running for the other
+  // players until stopped here; a solo one is saved and stopped
+  const server = await invoke("server_status");
+  if (server?.mode === "host") {
+    showHosting(server);
+    setStatus("Your LAN game is still running.");
+  } else if (server) {
+    await invoke("stop_server");
+  }
 }
 
 init().catch((error) => setStatus(String(error), true));
