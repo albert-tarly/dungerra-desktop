@@ -11,65 +11,10 @@
     <main class="screen">
       <img class="logo" src="logo.png" alt="" />
       <h1>Dungerra</h1>
-      <p class="tagline">How do you want to play?</p>
-
-      <section class="card" aria-labelledby="solo-title">
-        <div class="card-text">
-          <h2 id="solo-title">Solo</h2>
-          <p>Play on this computer. No internet needed.</p>
-        </div>
-        <button id="solo" type="button">Play Solo</button>
-      </section>
-
-      <section class="card" aria-labelledby="host-title">
-        <div class="card-text">
-          <h2 id="host-title">Host a LAN Game</h2>
-          <p>Others on your network join your world.</p>
-        </div>
-        <form id="host-form" class="card-actions">
-          <label>
-            Port
-            <input id="host-port" type="number" min="1024" max="65535" required />
-          </label>
-          <button id="host" type="submit">Start Hosting</button>
-        </form>
-        <div id="host-info" class="host-info" hidden>
-          <p>Hosting. Players join at:</p>
-          <ul id="share-list"></ul>
-          <p class="hint">
-            They can also open this address in a web browser. If nobody can
-            connect, allow Dungerra through your firewall.
-          </p>
-          <div class="card-actions">
-            <button id="enter-host" type="button">Enter Game</button>
-            <button id="stop-host" type="button" class="button-secondary">
-              Stop Hosting
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section class="card" aria-labelledby="join-title">
-        <div class="card-text">
-          <h2 id="join-title">Join a LAN Game</h2>
-          <p>Enter the address the host shared.</p>
-        </div>
-        <form id="join-form" class="card-actions">
-          <input
-            id="join-address"
-            type="text"
-            placeholder="192.168.1.5:8080"
-            autocomplete="off"
-            spellcheck="false"
-            required
-            aria-label="Host address"
-          />
-          <button id="join" type="submit">Join</button>
-        </form>
-      </section>
-
-      <p id="status" class="status" role="status" aria-live="polite"></p>
-
+      <p id="status" class="status" role="status" aria-live="polite">
+        Starting your world…
+      </p>
+      <button id="retry" type="button" hidden>Try Again</button>
       <footer id="version"></footer>
     </main>
     <script src="launcher.js"></script>

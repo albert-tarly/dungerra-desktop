@@ -1,7 +1,6 @@
 // No console window next to the game in release builds on Windows
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod network;
 mod server;
 
 use std::sync::Mutex;
@@ -10,54 +9,27 @@ use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewWindow, Wry};
 
-use server::{Mode, Paths, ServerManager};
+use server::{Paths, ServerManager};
 
-/// Solo games prefer a fixed port: the game client keeps its sign-in per
-/// origin (host and port), so a stable port keeps the player signed in
+/// The local server prefers a fixed port: the game client keeps its sign-in
+/// per origin (host and port), so a stable port keeps the player signed in
 /// between launches. Any free port is used if it is taken.
-const SOLO_PORT: u16 = 47823;
+const LOCAL_PORT: u16 = 47823;
 const MAIN_WINDOW: &str = "main";
-const APP_TITLE: &str = "Dungerra";
-const MENU_BACK: &str = "back-to-launcher";
+const MENU_MAIN: &str = "main-menu";
 const MENU_FULLSCREEN: &str = "toggle-fullscreen";
 
 #[derive(Default)]
 struct AppState {
     server: ServerManager,
-    /// The launcher page's own URL, to return to it from a game page.
-    launcher_url: Mutex<Option<Url>>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Started {
-    /// Where this computer opens the game.
-    url: String,
-    /// Addresses other players use to join (hosting only).
-    share_urls: Vec<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Status {
-    /// "solo" or "host".
-    mode: &'static str,
-    url: String,
-    share_urls: Vec<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Probed {
-    url: String,
-    game_version: String,
+    /// The start page's own URL, shown again if the server is not running.
+    start_url: Mutex<Option<Url>>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AppInfo {
     version: String,
-    default_host_port: u16,
 }
 
 fn server_paths(app: &AppHandle) -> Result<Paths, String> {
@@ -76,173 +48,66 @@ fn server_paths(app: &AppHandle) -> Result<Paths, String> {
     })
 }
 
-fn set_title(app: &AppHandle, title: &str) {
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        let _ = window.set_title(title);
-    }
+/// Where this computer opens the game served on `port`.
+fn local_url(port: u16, path: &str) -> Url {
+    Url::parse(&format!("http://127.0.0.1:{port}{path}")).expect("a valid local URL")
 }
 
-fn start_server_blocking(
-    app: &AppHandle,
-    mode: &str,
-    port: Option<u16>,
-) -> Result<Started, String> {
-    let paths = server_paths(app)?;
+/// Starts the local server unless it runs already, and returns its port.
+fn ensure_server(app: &AppHandle) -> Result<u16, String> {
     let manager = &app.state::<AppState>().server;
-    let (mode, port) = match mode {
-        "solo" => {
-            let port = match manager.start(&paths, Mode::Solo, SOLO_PORT) {
-                Ok(port) => port,
-                Err(e) if e.port_in_use => manager
-                    .start(&paths, Mode::Solo, 0)
-                    .map_err(|e| e.message)?,
-                Err(e) => return Err(e.message),
-            };
-            (Mode::Solo, port)
-        }
-        "host" => {
-            let port = port.unwrap_or(network::DEFAULT_LAN_PORT);
-            if port < 1024 {
-                return Err("Pick a port between 1024 and 65535".into());
-            }
-            let port = manager.start(&paths, Mode::Host, port).map_err(|e| {
-                if e.port_in_use {
-                    format!("Port {port} is already in use on this computer. Pick another port.")
-                } else {
-                    e.message
-                }
-            })?;
-            (Mode::Host, port)
-        }
-        other => return Err(format!("Unknown mode {other:?}")),
+    if let Some(port) = manager.current() {
+        return Ok(port);
+    }
+    let paths = server_paths(app)?;
+    match manager.start(&paths, LOCAL_PORT) {
+        Ok(port) => Ok(port),
+        Err(e) if e.port_in_use => manager.start(&paths, 0).map_err(|e| e.message),
+        Err(e) => Err(e.message),
+    }
+}
+
+/// Starts the game server on this computer and opens the game in the window.
+/// Joining other players, and opening a game to them, happens in the game.
+#[tauri::command]
+async fn start_game(app: AppHandle) -> Result<(), String> {
+    let port = {
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || ensure_server(&app))
+            .await
+            .map_err(|e| e.to_string())??
     };
-
-    let share_urls = share_urls(mode, port);
-    match (mode, share_urls.first()) {
-        (Mode::Host, Some(url)) => set_title(
-            app,
-            &format!("{APP_TITLE} — hosting at {}", url.trim_end_matches('/')),
-        ),
-        (Mode::Host, None) => set_title(app, &format!("{APP_TITLE} — hosting on port {port}")),
-        (Mode::Solo, _) => set_title(app, APP_TITLE),
-    }
-    Ok(Started {
-        url: local_url(port),
-        share_urls,
-    })
-}
-
-/// Where this computer opens a game served on `port`.
-fn local_url(port: u16) -> String {
-    format!("http://127.0.0.1:{port}/")
-}
-
-/// Addresses other players use to join a hosted game.
-fn share_urls(mode: Mode, port: u16) -> Vec<String> {
-    match mode {
-        Mode::Solo => Vec::new(),
-        Mode::Host => network::lan_addresses()
-            .into_iter()
-            .map(|ip| format!("http://{ip}:{port}/"))
-            .collect(),
-    }
-}
-
-/// The running local server, if any. The launcher uses it to show a hosted
-/// game again after the player returns from it.
-#[tauri::command]
-async fn server_status(app: AppHandle) -> Result<Option<Status>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>()
-            .server
-            .current()
-            .map(|(mode, port)| Status {
-                mode: match mode {
-                    Mode::Solo => "solo",
-                    Mode::Host => "host",
-                },
-                url: local_url(port),
-                share_urls: share_urls(mode, port),
-            })
-    })
-    .await
-    .map_err(|e| e.to_string())
-}
-
-/// Starts the local game server: "solo" (this computer only) or "host" (LAN).
-#[tauri::command]
-async fn start_server(app: AppHandle, mode: String, port: Option<u16>) -> Result<Started, String> {
-    tauri::async_runtime::spawn_blocking(move || start_server_blocking(&app, &mode, port))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-/// Stops the local game server, saving its sessions.
-#[tauri::command]
-async fn stop_server(app: AppHandle) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().server.stop();
-        set_title(&app, APP_TITLE);
-    })
-    .await
-    .map_err(|e| e.to_string())
-}
-
-/// Checks a LAN host before joining it.
-#[tauri::command]
-async fn probe_host(address: String) -> Result<Probed, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let url = network::parse_host_address(&address)?;
-        let game_version = network::probe(&url)?;
-        Ok(Probed {
-            url: url.to_string(),
-            game_version,
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Opens the game client served at `url` (a local server or a LAN host).
-#[tauri::command]
-fn open_game(app: AppHandle, url: String) -> Result<(), String> {
-    let mut url = Url::parse(&url).map_err(|e| e.to_string())?;
-    if url.scheme() != "http" {
-        return Err("Games are served over http".into());
-    }
-    // Tells the client it runs in the app and where its "Main Menu" button
-    // leads; game pages have no other access to the app
-    let launcher = app.state::<AppState>().launcher_url.lock().unwrap().clone();
-    if let Some(launcher) = launcher {
-        url.query_pairs_mut()
-            .append_pair("launcher", launcher.as_str());
-    }
     let window = app
         .get_webview_window(MAIN_WINDOW)
         .ok_or("No main window")?;
-    window.navigate(url).map_err(|e| e.to_string())
+    window
+        .navigate(local_url(port, "/"))
+        .map_err(|e| e.to_string())
 }
 
-/// Called by the launcher page when it loads. Only the launcher can call
-/// commands (game pages get no app access), so the caller's URL is where
-/// "Back to Launcher" and the client's "Main Menu" lead. The window's URL at
-/// startup is still about:blank, so it can't be taken from there.
+/// Called by the start page when it loads. Only that page can call commands
+/// (game pages get no app access), so the caller's URL is the start page.
+/// The window's URL at startup is still about:blank, so it can't be taken
+/// from there.
 #[tauri::command]
 fn app_info(app: AppHandle, window: WebviewWindow) -> AppInfo {
     if let Ok(url) = window.url() {
-        *app.state::<AppState>().launcher_url.lock().unwrap() = Some(url);
+        *app.state::<AppState>().start_url.lock().unwrap() = Some(url);
     }
     AppInfo {
         version: app.package_info().version.to_string(),
-        default_host_port: network::DEFAULT_LAN_PORT,
     }
 }
 
-/// Shows the launcher again, like the client's "Main Menu" button. The
-/// launcher then stops a solo server and shows a hosted game as still running.
-fn back_to_launcher(app: &AppHandle) {
-    let launcher = app.state::<AppState>().launcher_url.lock().unwrap().clone();
-    if let (Some(window), Some(url)) = (app.get_webview_window(MAIN_WINDOW), launcher) {
+/// Game → Main Menu: the player's own game list, from anywhere (a game, or a
+/// LAN host's pages). Leaving a game this way also closes it to LAN.
+fn main_menu(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let target = match state.server.current() {
+        Some(port) => Some(local_url(port, "/sessions")),
+        None => state.start_url.lock().unwrap().clone(),
+    };
+    if let (Some(window), Some(url)) = (app.get_webview_window(MAIN_WINDOW), target) {
         let _ = window.navigate(url);
     }
 }
@@ -251,13 +116,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     // The default menu keeps the platform basics (on macOS, Edit is what
     // makes copy and paste work in text fields)
     let menu = Menu::default(app)?;
-    let back = MenuItem::with_id(
-        app,
-        MENU_BACK,
-        "Back to Launcher",
-        true,
-        Some("CmdOrCtrl+Shift+L"),
-    )?;
+    let main = MenuItem::with_id(app, MENU_MAIN, "Main Menu", true, Some("CmdOrCtrl+Shift+L"))?;
     let fullscreen = MenuItem::with_id(
         app,
         MENU_FULLSCREEN,
@@ -265,7 +124,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         true,
         Some("F11"),
     )?;
-    let game = Submenu::with_items(app, "Game", true, &[&back, &fullscreen])?;
+    let game = Submenu::with_items(app, "Game", true, &[&main, &fullscreen])?;
     menu.append(&game)?;
     Ok(menu)
 }
@@ -279,7 +138,7 @@ fn main() {
             Ok(())
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
-            MENU_BACK => back_to_launcher(app),
+            MENU_MAIN => main_menu(app),
             MENU_FULLSCREEN => {
                 if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                     let fullscreen = window.is_fullscreen().unwrap_or(false);
@@ -288,14 +147,7 @@ fn main() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![
-            start_server,
-            stop_server,
-            server_status,
-            probe_host,
-            open_game,
-            app_info
-        ])
+        .invoke_handler(tauri::generate_handler![start_game, app_info])
         .build(tauri::generate_context!())
         .expect("failed to build the Dungerra app")
         .run(|app, event| {

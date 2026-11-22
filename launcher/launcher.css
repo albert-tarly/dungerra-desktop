@@ -1,12 +1,11 @@
 /* Matches the game client's look (dungerra/src/styles.css): black page,
-   Texturina text, Rubik Distressed title, orange pill buttons, orange-tinted
-   panels. Fonts are bundled (fonts/), so this works offline. */
+   Texturina text, Rubik Distressed title, orange pill buttons. Fonts are
+   bundled (fonts/), so this works offline. */
 
 * {
   box-sizing: border-box;
 }
 
-/* Layout rules such as .card-actions { display: flex } would otherwise win */
 [hidden] {
   display: none !important;
 }
@@ -27,7 +26,6 @@ body {
 }
 
 h1,
-h2,
 p {
   margin: 0;
 }
@@ -36,9 +34,9 @@ p {
   display: flex;
   flex-direction: column;
   align-items: center;
-  row-gap: 10px;
+  row-gap: 12px;
   width: 100%;
-  max-width: 460px;
+  max-width: 560px;
   padding: 16px;
 }
 
@@ -52,75 +50,6 @@ h1 {
   font-size: 2em;
   font-weight: 800;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-.tagline {
-  margin-bottom: 4px;
-  color: #ffaa33;
-}
-
-.card {
-  display: flex;
-  flex-direction: column;
-  row-gap: 10px;
-  width: 100%;
-  padding: 12px 16px 14px;
-  background: rgba(255, 153, 0, 0.15);
-  border-radius: 5px;
-}
-
-.card h2 {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.card-text p {
-  margin-top: 2px;
-  font-size: 14px;
-  color: #ffaa33;
-}
-
-.card-actions {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-}
-
-/* Direct children only: the port field sits in a column label, where flex
-   would squeeze its height */
-.card-actions > input {
-  flex: 1;
-  min-width: 0;
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
-  color: #ffaa33;
-}
-
-#host-port {
-  width: 110px;
-}
-
-/* Same height as the buttons next to them */
-input {
-  height: 42px;
-  padding: 0 12px;
-  font: inherit;
-  font-size: 16px;
-  background: #2a2a2a;
-  color: #fff;
-  border: 2px solid #ff9900;
-  border-radius: 5px;
-}
-
-input:focus {
-  outline: none;
-  border-color: #ffaa33;
-  box-shadow: 0 0 8px rgba(255, 153, 0, 0.3);
 }
 
 button {
@@ -139,73 +68,33 @@ button {
     box-shadow 0.1s;
 }
 
-/* A lone button fills its card, like the client's full-width actions */
-.card > button {
-  align-self: stretch;
-}
-
-button:hover:not(:disabled) {
+button:hover {
   transform: translateY(-2px);
   box-shadow:
     inset 0 -4px 0 rgba(0, 0, 0, 0.2),
     0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-button:active:not(:disabled) {
+button:active {
   transform: translateY(2px);
   box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.2);
 }
 
-button:focus-visible,
-input:focus-visible {
+button:focus-visible {
   outline: 2px solid #ffaa33;
   outline-offset: 2px;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-
-.button-secondary {
-  background-color: #666;
-  color: #fff;
-}
-
-.host-info {
-  display: flex;
-  flex-direction: column;
-  row-gap: 8px;
-}
-
-.host-info ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.host-info li {
-  font-size: 20px;
-  font-weight: 700;
-  color: #ff9900;
-  user-select: all;
-}
-
-.hint {
-  font-size: 13px;
-  opacity: 0.8;
 }
 
 .status {
   min-height: 1.5em;
   text-align: center;
   white-space: pre-wrap;
-  opacity: 0.8;
+  color: #ffaa33;
 }
 
 .status.error {
   width: 100%;
-  max-height: 30vh;
+  max-height: 50vh;
   overflow: auto;
   padding: 10px 12px;
   text-align: left;
@@ -214,7 +103,6 @@ button:disabled {
   color: #ff6b5b;
   background: #1a1a1a;
   border-radius: 5px;
-  opacity: 1;
 }
 
 footer {

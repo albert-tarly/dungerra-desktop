@@ -1,13 +1,13 @@
 # Dungerra Desktop
 
-The desktop app for [Dungerra](https://github.com/albert-tarly/dungerra): play solo with no internet connection, or host and join games on your local network. It is built for Windows (x64) and macOS (universal: Apple Silicon and Intel).
+The desktop app for [Dungerra](https://github.com/albert-tarly/dungerra): play solo with no internet connection, open your game to players on your local network, or join theirs. It is built for Windows (x64) and macOS (universal: Apple Silicon and Intel).
 
 This repo contains only the app shell. The game comes from two other repos, built at release time:
 
 - [`dungerra-api`](https://github.com/albert-tarly/dungerra-api): the game server, run in desktop mode
 - [`dungerra`](https://github.com/albert-tarly/dungerra): the web client, built with `npm run build:desktop`
 
-Players: see the [Desktop App guide](https://github.com/albert-tarly/dungerra-api/blob/main/docs/user/desktop-app.md) for installing, hosting and joining.
+Players: see the [Desktop App guide](https://github.com/albert-tarly/dungerra-api/blob/main/docs/user/desktop-app.md) for installing, opening a game to LAN and joining.
 
 The design and its trade-offs are in [`dungerra-api/docs/decisions/desktop-version.md`](https://github.com/albert-tarly/dungerra-api/blob/main/docs/decisions/desktop-version.md).
 
@@ -15,23 +15,23 @@ The design and its trade-offs are in [`dungerra-api/docs/decisions/desktop-versi
 
 ```
 Dungerra app (Tauri v2)
- ├─ launcher page (launcher/): Solo | Host a LAN game | Join a LAN game
- ├─ dungerra-server: the bundled game server, started by the app
+ ├─ start page (launcher/): starts the server, then opens the game
+ ├─ dungerra-server: the bundled game server, on 127.0.0.1 only
  │     serves the API, the WebSocket and the web client from one address
- └─ the window then opens the game from a server:
-       Solo → http://127.0.0.1:47823/   (this computer only)
-       Host → http://127.0.0.1:<port>/  (server open to the LAN)
-       Join → http://<host-ip>:<port>/  (no local server)
+ │     "Open to LAN" (game menu): serves one game on a second port, on the network
+ └─ the window shows the game:
+       own games      → http://127.0.0.1:47823/
+       Join LAN Game  → http://<host-ip>:<port>/  (the host's server and client)
 ```
 
+- **Everything after start happens in the game client.** Solo play is your own game list. **Open to LAN** in the game menu opens the game you are in. **Join LAN Game** in the game list joins someone else's.
+- **Open to LAN is per game.** Guests can sign in and play only that game. Leaving it (or **Stop Hosting**) closes the port and disconnects them. The server implements this (`-allow-lan`, `/api/v1/lan`).
 - **Joining players load the client from the host's server.** Client and server versions therefore always match, and a player can also join from any web browser at the host's address.
-- **Sign-in uses local accounts** (username and password) on whichever server you play on. Each server keeps its own accounts and leaderboard.
-- **Solo play uses port 47823** when it is free. The client stores its sign-in per address, so a fixed port keeps you signed in between launches.
-- **Returning to the launcher:** the client's **Main Menu** button (and **Game → Back to Launcher**, Ctrl/Cmd+Shift+L) opens the launcher again.
-  - How the client knows: `open_game` passes the launcher URL as `?launcher=…`. Game pages have no other access to the app.
-  - What happens to the server: the launcher stops a solo server but keeps a hosted game running and shows its address again.
-- **Fonts:** the launcher bundles the client's fonts (`launcher/fonts/`, SIL Open Font License) so it matches the game offline.
-- **Shutdown:** closing the app closes the server's stdin, and the server saves every session before it exits.
+- **Sign-in is just a name** (`NAME_AUTH_ENABLED`, no password) on whichever server you play on. A name is refused while someone plays with it. Joining from the app pre-fills your name on the host. Each server keeps its own characters and leaderboard.
+- **The local server uses port 47823** when it is free. The client stores its sign-in per address, so a fixed port keeps you signed in between launches.
+- **Going back:** a guest who joined from the app gets **Main Menu** buttons back to their own server (the client passes `?home=<own origin>` to the host). **Game → Main Menu** (Ctrl/Cmd+Shift+L) opens the own game list from anywhere. Game pages have no access to the app itself.
+- **Fonts:** the start page bundles the client's fonts (`launcher/fonts/`, SIL Open Font License) so it matches the game offline.
+- **Shutdown:** closing the app closes the server's stdin, and the server disconnects LAN guests and saves every session before it exits.
 - **Your data** (database, secret key, `server.log` from the latest run) lives in the app data folder:
   - Windows: `%APPDATA%\io.github.albert-tarly.dungerra`
   - macOS: `~/Library/Application Support/io.github.albert-tarly.dungerra`
@@ -65,10 +65,9 @@ cd src-tauri && cargo test && cargo clippy --all-targets && cargo fmt --check
 
 | Path | What |
 |---|---|
-| `launcher/` | Launcher page: plain HTML/CSS/JS, served from the app bundle |
-| `src-tauri/src/main.rs` | Commands for the launcher, menu, navigation, and stopping the server on exit |
+| `launcher/` | Start page: plain HTML/CSS/JS, served from the app bundle |
+| `src-tauri/src/main.rs` | Commands for the start page, the menu, and stopping the server on exit |
 | `src-tauri/src/server.rs` | Starting and stopping the game server (the sidecar contract) |
-| `src-tauri/src/network.rs` | Parsing host addresses, probing a host, listing LAN addresses |
 | `src-tauri/tauri.conf.json` | Window, bundle, sidecar and resources |
 | `src-tauri/Info.plist` | macOS local-network permission text and ATS exception for LAN http |
 | `scripts/` | Server and client build scripts |
@@ -80,7 +79,7 @@ cd src-tauri && cargo test && cargo clippy --all-targets && cargo fmt --check
 - the Windows NSIS installer
 - the macOS universal `.dmg`
 
-By default, CI builds the client from `dungerra` `main` and the server at the commit pinned in the client's `package-lock.json`, so their protocol types match. Run the workflow manually to pick other refs.
+By default, CI builds the client from `dungerra` `main` and the server at the commit pinned in the client's `package-lock.json`, so their protocol types match. CI fails if that server commit predates `-allow-lan`. Run the workflow manually to pick other refs.
 
 To release, bump `version` in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json`, then push a `v*` tag. CI attaches the installers to a draft GitHub Release.
 
@@ -89,8 +88,9 @@ The builds are **not code-signed** yet, so players see a warning the first time 
 - **Windows (SmartScreen):** click **More info → Run anyway**.
 - **macOS (Gatekeeper):** right-click the app and choose **Open**, or allow it under **System Settings → Privacy & Security**. If macOS says the app is damaged, run `xattr -dr com.apple.quarantine /Applications/Dungerra.app` in Terminal.
 
-## Hosting on a LAN: things players hit
+## Opening a game to LAN: things players hit
 
-- **Windows Firewall:** the first time you host, Windows asks whether `dungerra-server` may accept connections. Allow it. On a network marked **Public**, nobody can join until you allow it. If you dismissed the prompt, allow the app under **Windows Security → Firewall → Allow an app through firewall**.
+- **Windows Firewall:** the first time a game is opened to LAN, Windows asks whether `dungerra-server` may accept connections. Allow it. On a network marked **Public**, nobody can join until you allow it. If you dismissed the prompt, allow the app under **Windows Security → Firewall → Allow an app through firewall**.
+- **Third-party firewalls** (ESET, Norton, Kaspersky, Bitdefender…) block guests on their own, even when Windows allows them. Trust the home network in them, or allow `dungerra-server`.
 - **macOS:** asks for permission to find devices on your local network. Allow it, or nobody can join.
-- **Same network only:** joining works only on the same network. Guest Wi-Fi often isolates devices from each other.
+- **Same network only:** joining works only on the same network. Guest Wi-Fi often isolates devices from each other. Internet play needs port forwarding (plain http, see the player guide) or a virtual LAN such as Tailscale.

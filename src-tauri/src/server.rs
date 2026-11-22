@@ -38,25 +38,14 @@ const SCRUBBED_ENV: &[&str] = &[
     "TLS_KEY",
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
+    "LOCAL_AUTH_ENABLED",
     "ENGINE_DEBUG_MODE",
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Mode {
-    /// Reachable from this computer only.
-    Solo,
-    /// Reachable from the local network.
-    Host,
-}
-
-impl Mode {
-    fn bind_host(self) -> &'static str {
-        match self {
-            Mode::Solo => "127.0.0.1",
-            Mode::Host => "0.0.0.0",
-        }
-    }
-}
+/// The server is reachable from this computer only. A player opens one game
+/// to the network from inside it ("Open to LAN", `-allow-lan`), which the
+/// server serves on a second listener of its own.
+const BIND_HOST: &str = "127.0.0.1";
 
 /// Where the server binary, its data and the web client live.
 pub struct Paths {
@@ -76,7 +65,6 @@ struct Running {
     child: Child,
     /// Held open for the server's lifetime; dropping it asks the server to stop.
     stdin: Option<ChildStdin>,
-    mode: Mode,
     port: u16,
 }
 
@@ -97,21 +85,21 @@ fn parse_ready_port(payload: &str) -> Option<u16> {
 }
 
 impl ServerManager {
-    /// The mode and port of the running server, if any. A server that exited
-    /// on its own (a crash) is forgotten.
-    pub fn current(&self) -> Option<(Mode, u16)> {
+    /// The port of the running server, if any. A server that exited on its
+    /// own (a crash) is forgotten.
+    pub fn current(&self) -> Option<u16> {
         let mut guard = self.running.lock().unwrap();
         let running = guard.as_mut()?;
         if !matches!(running.child.try_wait(), Ok(None)) {
             *guard = None;
             return None;
         }
-        Some((running.mode, running.port))
+        Some(running.port)
     }
 
     /// Stops any running server, then starts one and waits until it accepts
     /// connections. Returns the bound port (useful when `port` is 0).
-    pub fn start(&self, paths: &Paths, mode: Mode, port: u16) -> Result<u16, StartError> {
+    pub fn start(&self, paths: &Paths, port: u16) -> Result<u16, StartError> {
         self.stop();
 
         let fail = |message: String| StartError {
@@ -127,9 +115,10 @@ impl ServerManager {
         }
         cmd.args([
             "-host",
-            mode.bind_host(),
+            BIND_HOST,
             "-port",
             &port.to_string(),
+            "-allow-lan",
             "-ready-line",
             "-shutdown-on-stdin-close",
             "-no-dotenv",
@@ -137,7 +126,9 @@ impl ServerManager {
         .current_dir(&paths.data_dir)
         .env("DATA_DIR", &paths.data_dir)
         .env("STATIC_DIR", &paths.web_dir)
-        .env("LOCAL_AUTH_ENABLED", "true")
+        // Players sign in with just a name (no passwords on a home computer
+        // or a LAN). Google sign-in in the app comes later.
+        .env("NAME_AUTH_ENABLED", "true")
         .env("GOOGLE_AUTH_ENABLED", "false")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -192,7 +183,6 @@ impl ServerManager {
                 *self.running.lock().unwrap() = Some(Running {
                     child,
                     stdin,
-                    mode,
                     port: bound_port,
                 });
                 return Ok(bound_port);
