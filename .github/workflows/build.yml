@@ -78,12 +78,14 @@ jobs:
           ref: ${{ steps.api.outputs.ref }}
           path: sources/dungerra-api
 
-      # The app starts the server with -allow-lan ("Open to LAN"), the newest
-      # flag of the sidecar contract
+      # The app starts the server with -allow-lan ("Open to LAN") and
+      # GOOGLE_OAUTH_FLOW=loopback (Google sign-in in the system browser), the
+      # newest parts of the sidecar contract
       - name: Check server supports desktop mode
         run: |
-          if ! grep -q '"allow-lan"' sources/dungerra-api/main.go; then
-            echo "::error::dungerra-api ${{ steps.api.outputs.ref }} predates Open to LAN. Run 'npm update dungerra-api' in dungerra and push, or pass api_ref."
+          if ! grep -q '"allow-lan"' sources/dungerra-api/main.go ||
+             ! grep -q 'GOOGLE_OAUTH_FLOW' sources/dungerra-api/internal/config/config.go; then
+            echo "::error::dungerra-api ${{ steps.api.outputs.ref }} predates Google sign-in in the app. Run 'npm update dungerra-api' in dungerra and push, or pass api_ref."
             exit 1
           fi
 
@@ -128,7 +130,12 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+      # The app's Google OAuth client ("Desktop app" type), baked into the
+      # binary. Without these secrets the app offers name sign-in only.
       - name: Build app
+        env:
+          DUNGERRA_GOOGLE_CLIENT_ID: ${{ secrets.DUNGERRA_GOOGLE_CLIENT_ID }}
+          DUNGERRA_GOOGLE_CLIENT_SECRET: ${{ secrets.DUNGERRA_GOOGLE_CLIENT_SECRET }}
         run: npx tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
       - name: Upload installer

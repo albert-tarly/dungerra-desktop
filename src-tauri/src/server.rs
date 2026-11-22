@@ -38,9 +38,24 @@ const SCRUBBED_ENV: &[&str] = &[
     "TLS_KEY",
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
+    "GOOGLE_OAUTH_FLOW",
+    "API_BASE_URL",
+    "FRONTEND_URL",
     "LOCAL_AUTH_ENABLED",
     "ENGINE_DEBUG_MODE",
 ];
+
+/// The app's Google OAuth client ("Desktop app" type), baked in at build time
+/// from DUNGERRA_GOOGLE_CLIENT_ID and DUNGERRA_GOOGLE_CLIENT_SECRET (CI
+/// secrets). Google treats a desktop client's secret as not confidential; it
+/// ships in every installer anyway. Builds without them offer name sign-in only.
+const GOOGLE_CLIENT: Option<(&str, &str)> = match (
+    option_env!("DUNGERRA_GOOGLE_CLIENT_ID"),
+    option_env!("DUNGERRA_GOOGLE_CLIENT_SECRET"),
+) {
+    (Some(id), Some(secret)) if !id.is_empty() && !secret.is_empty() => Some((id, secret)),
+    _ => None,
+};
 
 /// The server is reachable from this computer only. A player opens one game
 /// to the network from inside it ("Open to LAN", `-allow-lan`), which the
@@ -127,12 +142,21 @@ impl ServerManager {
         .env("DATA_DIR", &paths.data_dir)
         .env("STATIC_DIR", &paths.web_dir)
         // Players sign in with just a name (no passwords on a home computer
-        // or a LAN). Google sign-in in the app comes later.
+        // or a LAN), or with Google when this build has an OAuth client
         .env("NAME_AUTH_ENABLED", "true")
-        .env("GOOGLE_AUTH_ENABLED", "false")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+        match GOOGLE_CLIENT {
+            // Sign-in happens in the system browser, which Google redirects
+            // back to this server on 127.0.0.1 (the loopback flow)
+            Some((id, secret)) => cmd
+                .env("GOOGLE_AUTH_ENABLED", "true")
+                .env("GOOGLE_OAUTH_FLOW", "loopback")
+                .env("GOOGLE_CLIENT_ID", id)
+                .env("GOOGLE_CLIENT_SECRET", secret),
+            None => cmd.env("GOOGLE_AUTH_ENABLED", "false"),
+        };
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;

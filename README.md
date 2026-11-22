@@ -27,7 +27,10 @@ Dungerra app (Tauri v2)
 - **Everything after start happens in the game client.** Solo play is your own game list. **Open to LAN** in the game menu opens the game you are in. **Join LAN Game** in the game list joins someone else's.
 - **Open to LAN is per game.** Guests can sign in and play only that game. Leaving it (or **Stop Hosting**) closes the port and disconnects them. The server implements this (`-allow-lan`, `/api/v1/lan`).
 - **Joining players load the client from the host's server.** Client and server versions therefore always match, and a player can also join from any web browser at the host's address.
-- **Sign-in is just a name** (`NAME_AUTH_ENABLED`, no password) on whichever server you play on. A name is refused while someone plays with it. Joining from the app pre-fills your name on the host. Each server keeps its own characters and leaderboard.
+- **Sign-in is a name or Google** on whichever server you play on. Each server keeps its own characters and leaderboard.
+  - **A name** (`NAME_AUTH_ENABLED`) has no password. It is refused while someone plays with it. Joining from the app pre-fills it on the host.
+  - **Google** runs in the system browser. The shell opens `accounts.google.com` there instead of in the window, and the local server receives Google's redirect on `127.0.0.1` (`GOOGLE_OAUTH_FLOW=loopback`).
+- **Google sign-in only:** a host can require Google for a LAN game. Joining from the app then signs in with Google, carrying the host's one-time nonce, and hands the ID token to the host.
 - **The local server uses port 47823** when it is free. The client stores its sign-in per address, so a fixed port keeps you signed in between launches.
 - **Going back:** a guest who joined from the app gets **Main Menu** buttons back to their own server (the client passes `?home=<own origin>` to the host). **Game → Main Menu** (Ctrl/Cmd+Shift+L) opens the own game list from anywhere. Game pages have no access to the app itself.
 - **Fonts:** the start page bundles the client's fonts (`launcher/fonts/`, SIL Open Font License) so it matches the game offline.
@@ -71,6 +74,16 @@ cd src-tauri && cargo test && cargo clippy --all-targets && cargo fmt --check
 | `src-tauri/tauri.conf.json` | Window, bundle, sidecar and resources |
 | `src-tauri/Info.plist` | macOS local-network permission text and ATS exception for LAN http |
 | `scripts/` | Server and client build scripts |
+
+### Google sign-in (OAuth client)
+
+Google sign-in needs a Google OAuth client of type **Desktop app**. It is baked into the app at build time from two environment variables. Without them, the app offers name sign-in only.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services → Credentials**, choose **Create credentials → OAuth client ID → Desktop app**. Desktop clients accept loopback redirects on any port, so there are no redirect URIs to enter. The OAuth consent screen must exist; while it is in *Testing*, only listed test users can sign in.
+2. **For CI:** add the ID and secret as repository secrets `DUNGERRA_GOOGLE_CLIENT_ID` and `DUNGERRA_GOOGLE_CLIENT_SECRET`.
+3. **For local builds:** set the same names as environment variables before `npm run dev` / `npm run build`.
+
+Google does not treat a desktop client's secret as confidential, because it ships inside every installer. Don't reuse the web version's client.
 
 ## Releases
 

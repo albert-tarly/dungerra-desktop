@@ -7,7 +7,9 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, Submenu};
+use tauri::plugin::TauriPlugin;
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewWindow, Wry};
+use tauri_plugin_opener::OpenerExt;
 
 use server::{Paths, ServerManager};
 
@@ -18,6 +20,30 @@ const LOCAL_PORT: u16 = 47823;
 const MAIN_WINDOW: &str = "main";
 const MENU_MAIN: &str = "main-menu";
 const MENU_FULLSCREEN: &str = "toggle-fullscreen";
+/// Google refuses to sign in inside embedded browsers such as the game
+/// window, so its sign-in page opens in the system browser instead.
+const GOOGLE_SIGN_IN_HOST: &str = "accounts.google.com";
+
+/// Opens Google's sign-in page in the system browser, where the game window
+/// would navigate to it. The game page stays and polls its server, which
+/// Google redirects the browser back to (dungerra-api loopback flow).
+fn google_sign_in_in_browser() -> TauriPlugin<Wry> {
+    tauri::plugin::Builder::new("google-sign-in")
+        .on_navigation(|webview, url| {
+            if url.scheme() == "https" && url.host_str() == Some(GOOGLE_SIGN_IN_HOST) {
+                if let Err(e) = webview
+                    .app_handle()
+                    .opener()
+                    .open_url(url.as_str(), None::<&str>)
+                {
+                    eprintln!("[desktop] cannot open the browser for Google sign-in: {e}");
+                }
+                return false;
+            }
+            true
+        })
+        .build()
+}
 
 #[derive(Default)]
 struct AppState {
@@ -131,6 +157,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(google_sign_in_in_browser())
         .manage(AppState::default())
         .setup(|app| {
             let menu = build_menu(app.handle())?;
