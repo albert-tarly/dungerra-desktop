@@ -130,13 +130,25 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+      # One version for server, client and app: the app takes it from the
+      # dungerra-api it bundles. A release tag must name that version.
+      - name: Check release tag matches the game version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(node -p "require('./sources/dungerra-api/package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match the game version ${version} (dungerra-api package.json). Tag v${version}, or pin the dungerra-api release in dungerra."
+            exit 1
+          fi
+
       # The app's Google OAuth client ("Desktop app" type), baked into the
       # binary. Without these secrets the app offers name sign-in only.
+      # scripts/tauri.mjs sets the app version from dungerra-api.
       - name: Build app
         env:
           DUNGERRA_GOOGLE_CLIENT_ID: ${{ secrets.DUNGERRA_GOOGLE_CLIENT_ID }}
           DUNGERRA_GOOGLE_CLIENT_SECRET: ${{ secrets.DUNGERRA_GOOGLE_CLIENT_SECRET }}
-        run: npx tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+        run: node scripts/tauri.mjs build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
       - name: Upload installer
         uses: actions/upload-artifact@v6

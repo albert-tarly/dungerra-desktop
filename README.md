@@ -94,7 +94,12 @@ Google does not treat a desktop client's secret as confidential, because it ship
 
 By default, CI builds the client from `dungerra` `main` and the server at the commit pinned in the client's `package-lock.json`, so their protocol types match. CI fails if that server commit predates `-allow-lan`. Run the workflow manually to pick other refs.
 
-To release, bump `version` in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json`, then push a `v*` tag. CI attaches the installers to a draft GitHub Release.
+**One version for everything.** The server, the web client and the app share one version, and dungerra-api's `package.json` holds it. `scripts/tauri.mjs` (used by `npm run dev`/`build` and CI) gives the app the version of the dungerra-api it bundles. The version fields in this repo stay `0.0.0`.
+
+To release:
+1. In dungerra-api, bump `version` in `package.json` and `GameVersion` in `internal/config/config.go` (a test keeps them equal), and date the `CHANGELOG.md` section. Push.
+2. In dungerra, set the same `version` in `package.json`, run `npm update dungerra-api`, and push.
+3. Here, push the tag `v<version>`. CI fails if the tag doesn't match the bundled dungerra-api version, and otherwise attaches the installers to a draft GitHub Release.
 
 The builds are **not code-signed** yet, so players see a warning the first time they open the app:
 

@@ -1,6 +1,6 @@
 [package]
 name = "dungerra-desktop"
-version = "0.1.0"
+version = "0.0.0"
 description = "Dungerra desktop app: solo and LAN play"
 edition = "2021"
 publish = false

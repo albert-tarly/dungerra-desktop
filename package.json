@@ -1,17 +1,17 @@
 {
   "name": "dungerra-desktop",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "private": true,
   "description": "Dungerra desktop app (Tauri shell) for solo and LAN play",
   "type": "module",
   "scripts": {
-    "tauri": "tauri",
+    "tauri": "node scripts/tauri.mjs",
     "build:sidecar": "node scripts/build-sidecar.mjs",
     "build:web": "node scripts/build-web.mjs",
     "build:deps": "npm run build:sidecar && npm run build:web",
-    "dev": "npm run build:deps && tauri dev",
-    "build": "npm run build:deps && tauri build",
-    "icons": "tauri icon ../dungerra/src/favicon.png"
+    "dev": "npm run build:deps && node scripts/tauri.mjs dev",
+    "build": "npm run build:deps && node scripts/tauri.mjs build",
+    "icons": "node scripts/tauri.mjs icon ../dungerra/src/favicon.png"
   },
   "engines": {
     "node": ">=26"
